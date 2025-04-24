@@ -165,8 +165,8 @@ fn remove_old_edges_and_nodes(state: &mut GngState) {
     let mut edges_to_remove = Vec::new();
     // get_active_neuron_indices() は &[] を返すので、コピーが必要な場合がある
     // ここではイミュータブルな参照でループするので問題ない
-    let current_active_indices_for_edge_check = state.get_active_neuron_indices().to_vec(); // 削除中にリストが変わる可能性があるのでコピー
-    for &r in &current_active_indices_for_edge_check {
+    let current_active_indices = state.get_active_neuron_indices();
+    for &r in current_active_indices {
         // state.edges[r] をイテレート
         for (&c, &age) in &state.edges[r] {
             // 重複削除を防ぐため、r < c のペアのみをリストに追加
@@ -184,9 +184,9 @@ fn remove_old_edges_and_nodes(state: &mut GngState) {
 
     // --- 孤立ノードの削除 ---
     let mut nodes_to_remove = Vec::new();
-    // 再度アクティブなノードリストを使う (削除中にリストが変わる可能性があるのでコピー)
-    let current_active_indices_for_node_check = state.get_active_neuron_indices().to_vec();
-    for &k in &current_active_indices_for_node_check {
+    // 再度アクティブなノードリストを使う
+    let current_active_indices = state.get_active_neuron_indices();
+    for &k in current_active_indices {
         // ノード k が存在し、エッジが空かチェック
         if state.neurons_exist[k] && state.edges[k].is_empty() {
             nodes_to_remove.push(k);
@@ -212,8 +212,6 @@ fn remove_old_edges_and_nodes(state: &mut GngState) {
 // ステップ 8: 新しいノードを挿入 (修正)
 fn insert_node(state: &mut GngState) {
     // (i) 最大エラーを持つノード q を見つける
-    // get_active_neuron_indices() は &[] を返すので、コピーが必要な場合がある
-    // ここではイミュータブルな参照でループするので問題ない
     let q_index_option = state.get_active_neuron_indices() // スライスを使用
         .iter() // イテレータを取得
         .copied() // &usize を usize に変換
