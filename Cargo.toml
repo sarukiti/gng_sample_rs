@@ -1,0 +1,13 @@
+[package]
+name = "gng_sample_rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nalgebra = "0.32.3"
+rand = "0.8.5"
+plotters = "0.3.5" # 追加
+plotters-bitmap = "0.3.5" # 追加
+
+[profile.release]
+debug = 2
