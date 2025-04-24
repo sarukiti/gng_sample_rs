@@ -133,46 +133,67 @@ fn update_edges(state: &mut GngState, s1_index: usize, s2_index: usize) {
     }
 }
 
-// ステップ 7: 古いエッジと孤立ノードを削除
+// ステップ 7: 古いエッジと孤立ノードを削除 (最適化案1適用)
 fn remove_old_edges_and_nodes(state: &mut GngState) {
+    let active_indices = state.get_active_neuron_indices(); // アクティブなノードのインデックスを取得
+    let num_active = active_indices.len();
+
+    // --- 古いエッジの削除 ---
     let mut edges_to_remove = Vec::new();
-    for r in 0..MAX_N {
-        for c in (r + 1)..MAX_N {
+    // アクティブなノードのペアのみをチェック
+    for i in 0..num_active {
+        let r = active_indices[i];
+        // i+1 から始めることで重複チェックと自己ループを避ける
+        for j in (i + 1)..num_active {
+            let c = active_indices[j];
+            // 接続が存在し、かつ年齢が閾値を超えているかチェック
+            // connectivity は対称なので片方だけチェックすれば良い
             if state.connectivity[r][c] && state.edge_age[r][c] > TH_AGE {
                 edges_to_remove.push((r, c));
             }
         }
     }
 
-    for (r, c) in edges_to_remove {
-        state.connectivity[r][c] = false;
-        state.connectivity[c][r] = false;
-        // 年齢もリセット (オプションだが、整合性のために行う)
-        state.edge_age[r][c] = 0.0;
-        state.edge_age[c][r] = 0.0;
+    // 見つかった古いエッジを削除
+    for (r, c) in &edges_to_remove { // イミュータブル参照で十分
+        state.connectivity[*r][*c] = false;
+        state.connectivity[*c][*r] = false;
+        state.edge_age[*r][*c] = 0.0;
+        state.edge_age[*c][*r] = 0.0;
     }
 
+    // --- 孤立ノードの削除 ---
+    // エッジ削除後に孤立した可能性のあるノードをチェック
     let mut nodes_to_remove = Vec::new();
-    for k in 0..MAX_N {
-        if state.neurons_exist[k] {
-            let has_connection = state.connectivity[k].iter().any(|&connected| connected);
-            if !has_connection {
-                nodes_to_remove.push(k);
-            }
+    // 再度アクティブなノードリストを使う
+    for &k in &active_indices { // k はアクティブなノードのインデックス
+        // 削除されたエッジの影響を考慮するため、現在の接続状態を確認
+        // k に接続しているアクティブなノードが存在するかチェック
+        // connectivity[k] を直接チェックする方が効率的
+        let is_still_connected = (0..MAX_N).any(|j| state.connectivity[k][j]);
+
+        // 接続がなければ削除候補リストに追加
+        // ただし、そのノードがまだ存在しているか確認 (他の処理で削除されていないか)
+        if !is_still_connected && state.neurons_exist[k] {
+            nodes_to_remove.push(k);
         }
     }
 
+    // 見つかった孤立ノードを削除
     for k in nodes_to_remove {
+        // ノードが存在することを確認 (他の処理で削除されていないか)
         if state.neurons_exist[k] {
             state.neurons_exist[k] = false;
             state.neurons_error[k] = 0.0;
-            // 削除されたノードの接続と年齢をクリア
-            for j in 0..MAX_N {
-                state.connectivity[k][j] = false;
-                state.connectivity[j][k] = false;
-                state.edge_age[k][j] = 0.0;
-                state.edge_age[j][k] = 0.0;
-            }
+            // 関連する接続情報はエッジ削除処理でクリアされているか、
+            // もしくは接続がないためクリア不要なはず。
+            // 念のためクリアする場合 (通常は不要):
+            // for j in 0..MAX_N {
+            //     state.connectivity[k][j] = false;
+            //     state.connectivity[j][k] = false;
+            //     state.edge_age[k][j] = 0.0;
+            //     state.edge_age[j][k] = 0.0;
+            // }
         }
     }
 }
@@ -318,7 +339,7 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
                 // ステップ 9: 全ノードのエラーを減衰
                 decay_errors(&mut state);
                 // ステップ 10: プロット (条件付き)
-                plot_state(&state, i, &cluster_pos, plot_dir);
+                // plot_state(&state, i, &cluster_pos, plot_dir);
             }
             None => {
                 println!(
