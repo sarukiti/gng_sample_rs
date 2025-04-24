@@ -1,3 +1,4 @@
 gng_plots/
 /target
 profile.json.gz
+sample_image*.png

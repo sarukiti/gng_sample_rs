@@ -1,61 +1,25 @@
+mod utils;
+
 use nalgebra::{Point2, Vector2};
 use rand::Rng;
-use std::vec::Vec;
-use std::cmp::Ordering; // Ordering をインポート
+use std::cmp::Ordering;
+use std::vec::Vec; // Ordering をインポート
 
 // plotters のインポートを追加
 use plotters::prelude::*;
 use plotters_bitmap::BitMapBackend; // Bitmap バックエンドを使用
 
+use utils::extract_data_from_image;
+
 // --- 定数 ---
-const LR_S1: f64 = 0.2; // 勝者ニューロンの学習率
-const LR_S2: f64 = 0.1; // 隣接ニューロンの学習率
-const BETA: f64 = 0.2; // 全ニューロンのエラー減衰率
-const ALPHA: f64 = 0.2; // 新規ノード挿入時のエラー減衰率
-const MAX_N: usize = 250; // 最大ニューロン数
-const TH_AGE: f64 = 13.0; // エッジの最大年齢
-const LAMBDA_VALUE: usize = 11; // 新規ノード挿入の間隔 (ステップ数)
-const MAX_ITERATIONS: usize = 1000; // 最大イテレーション数を定義
-
-// --- データ生成関数 ---
-fn generate_cluster_data() -> Vec<Point2<f64>> {
-    let mut rng = rand::thread_rng();
-
-    let rounds: Vec<(f64, f64, f64)> = vec![
-        (100.0, 100.0, 80.0),
-        (250.0, 250.0, 80.0),
-        (400.0, 400.0, 80.0),
-    ];
-
-    let num_initial_points = 4096 * 4;
-    let mut pos: Vec<Point2<f64>> = Vec::with_capacity(num_initial_points);
-    for _ in 0..num_initial_points {
-        pos.push(Point2::new(
-            rng.gen_range(0.0..500.0),
-            rng.gen_range(0.0..500.0),
-        ));
-    }
-
-    let mut cluster_pos: Vec<Point2<f64>> = Vec::new();
-    for &(center_x, center_y, radius) in &rounds {
-        let center = Point2::new(center_x, center_y);
-        let radius_sq = radius * radius;
-        let inner_radius_sq = (radius / 2.0) * (radius / 2.0);
-
-        for p in &pos {
-            let distance_sq = nalgebra::distance_squared(p, &center);
-            if distance_sq < radius_sq && distance_sq > inner_radius_sq {
-                cluster_pos.push(*p);
-            }
-        }
-    }
-    //println!(
-    //    "Generated {} points in the clusters.", // "クラスター内に {} 個の点を生成しました。"
-    //    cluster_pos.len()
-    //);
-    cluster_pos
-}
-
+const LR_S1: f64 = 0.5; // 勝者ニューロンの学習率
+const LR_S2: f64 = 0.02; // 隣接ニューロンの学習率
+const BETA: f64 = 0.02; // 全ニューロンのエラー減衰率
+const ALPHA: f64 = 0.5; // 新規ノード挿入時のエラー減衰率
+const MAX_N: usize = 500; // 最大ニューロン数
+const TH_AGE: f64 = 2.0; // エッジの最大年齢
+const LAMBDA_VALUE: usize = 4; // 新規ノード挿入の間隔 (ステップ数)
+const MAX_ITERATIONS: usize = 500; // 最大イテレーション数を定義
 
 // --- GNG アルゴリズム実装 ---
 fn run_gng(cluster_pos: Vec<Point2<f64>>) {
@@ -96,12 +60,13 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
         let v = cluster_pos[v_index]; // v は Point2<f64>
 
         // ステップ 2: 勝者 s1 と 2 番目の勝者 s2 を見つける
-        let active_indices: Vec<usize> = (0..MAX_N)
-            .filter(|&idx| neurons_exist[idx])
-            .collect();
+        let active_indices: Vec<usize> = (0..MAX_N).filter(|&idx| neurons_exist[idx]).collect();
 
         if active_indices.len() < 2 {
-            println!("Warning: Less than 2 active neurons at iteration {}. Skipping.", i); // "警告: イテレーション {} でアクティブなニューロンが 2 未満です。スキップします。"
+            println!(
+                "Warning: Less than 2 active neurons at iteration {}. Skipping.",
+                i
+            ); // "警告: イテレーション {} でアクティブなニューロンが 2 未満です。スキップします。"
             continue;
         }
 
@@ -130,23 +95,12 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
 
         // s1 の直接の隣接ニューロンを更新 (標準的な GNG の解釈)
         for k in 0..MAX_N {
-             if connectivity[s1_index][k] { // k が s1 の隣接ニューロンの場合
-                 let neighbor_update_vector: Vector2<f64> = (v - neurons[k]) * LR_S2;
-                 neurons[k] += neighbor_update_vector;
-             }
+            if connectivity[s1_index][k] {
+                // k が s1 の隣接ニューロンの場合
+                let neighbor_update_vector: Vector2<f64> = (v - neurons[k]) * LR_S2;
+                neurons[k] += neighbor_update_vector;
+            }
         }
-        // --- 標準的な GNG の解釈の終わり ---
-        // Python コードの s2 とその隣接ニューロンに対する珍しい更新ロジックが意図されたものだった場合:
-        /*
-        let s2_update_vector: Vector2<f64> = (v - neurons[s2_index]) * LR_S2;
-        neurons[s2_index] += s2_update_vector;
-        for k in 0..MAX_N {
-             if connectivity[s2_index][k] { // k が s2 の隣接ニューロンの場合
-                 let neighbor_update_vector: Vector2<f64> = (v - neurons[k]) * LR_S2;
-                 neurons[k] += neighbor_update_vector;
-             }
-        }
-        */
 
         // ステップ 5: エッジの年齢をリセットするか、s1 と s2 の間にエッジを作成
         if !connectivity[s1_index][s2_index] {
@@ -167,7 +121,8 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
         // ステップ 7: th_age より古いエッジと、その結果として孤立したノードを削除
         let mut edges_to_remove = Vec::new();
         for r in 0..MAX_N {
-            for c in (r + 1)..MAX_N { // 上三角をチェック
+            for c in (r + 1)..MAX_N {
+                // 上三角をチェック
                 if connectivity[r][c] && edge_age[r][c] > TH_AGE {
                     edges_to_remove.push((r, c));
                 }
@@ -177,9 +132,6 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
         for (r, c) in edges_to_remove {
             connectivity[r][c] = false;
             connectivity[c][r] = false;
-            // 年齢をリセット (任意、Pythonコードでは明示的に行われていませんでした)
-            // edge_age[r][c] = 0.0;
-            // edge_age[c][r] = 0.0;
         }
 
         // 古いエッジを削除した後に孤立したノードを確認
@@ -194,29 +146,33 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
             }
         }
         for k in nodes_to_remove {
-             if neurons_exist[k] { // 再度確認
-                 // println!("Removing isolated neuron {}", k); // デバッグ: "孤立したニューロン {} を削除中"
-                 neurons_exist[k] = false;
-                 neurons_error[k] = 0.0; // エラーをリセット
-                 // 削除されたノードの接続をクリア (重要!)
-                 for j in 0..MAX_N {
-                     connectivity[k][j] = false;
-                     connectivity[j][k] = false;
-                     edge_age[k][j] = 0.0; // 年齢もリセット
-                     edge_age[j][k] = 0.0;
-                 }
-             }
+            if neurons_exist[k] {
+                // 再度確認
+                // println!("Removing isolated neuron {}", k); // デバッグ: "孤立したニューロン {} を削除中"
+                neurons_exist[k] = false;
+                neurons_error[k] = 0.0; // エラーをリセット
+                // 削除されたノードの接続をクリア (重要!)
+                for j in 0..MAX_N {
+                    connectivity[k][j] = false;
+                    connectivity[j][k] = false;
+                    edge_age[k][j] = 0.0; // 年齢もリセット
+                    edge_age[j][k] = 0.0;
+                }
+            }
         }
 
         // ステップ 8: lambda ステップごとに新しいノードを挿入
         let current_neuron_count = neurons_exist.iter().filter(|&&e| e).count();
         if i % LAMBDA_VALUE == 0 && current_neuron_count < MAX_N {
             // (i) 既存のニューロンの中で最大のエラーを持つノード q を見つける
-            let q_index_option = (0..MAX_N)
-                .filter(|&idx| neurons_exist[idx])
-                .max_by(|&idx_a, &idx_b| {
-                    neurons_error[idx_a].partial_cmp(&neurons_error[idx_b]).unwrap_or(Ordering::Equal)
-                });
+            let q_index_option =
+                (0..MAX_N)
+                    .filter(|&idx| neurons_exist[idx])
+                    .max_by(|&idx_a, &idx_b| {
+                        neurons_error[idx_a]
+                            .partial_cmp(&neurons_error[idx_b])
+                            .unwrap_or(Ordering::Equal)
+                    });
 
             if let Some(q_index) = q_index_option {
                 // (ii) q の隣接ニューロン f の中で最も遠いものを見つける (Python コードに従う)
@@ -225,7 +181,8 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
                 let mut max_dist_sq = -1.0;
 
                 for k in 0..MAX_N {
-                    if k != q_index && connectivity[q_index][k] { // k が隣接ニューロンの場合
+                    if k != q_index && connectivity[q_index][k] {
+                        // k が隣接ニューロンの場合
                         let neighbor_pos = neurons[k];
                         let dist_sq = nalgebra::distance_squared(&neighbor_pos, &q_pos);
                         if dist_sq > max_dist_sq {
@@ -269,10 +226,10 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
                         neurons_error[f_index] *= 1.0 - ALPHA;
 
                         // (v) r のエラーを設定する (更新されたエラーを使用して Python の式を使用)
-                        neurons_error[r_index] = neurons_error[q_index] + neurons_error[f_index] * 0.5;
-
+                        neurons_error[r_index] =
+                            neurons_error[q_index] + neurons_error[f_index] * 0.5;
                     } else {
-                         eprintln!("Error: No free slot found for new neuron r."); // "エラー: 新しいニューロン r のための空きスロットが見つかりません。"
+                        eprintln!("Error: No free slot found for new neuron r."); // "エラー: 新しいニューロン r のための空きスロットが見つかりません。"
                     }
                 } // else: ノード q には隣接ニューロンがなかった
             } // else: 既存のニューロンが見つからなかった
@@ -290,27 +247,28 @@ fn run_gng(cluster_pos: Vec<Point2<f64>>) {
 
         // --- プロット処理を追加 ---
         // 定期的に (例: 100 イテレーションごと) または最後にプロット
-        /*if i % 100 == 0 || i == MAX_ITERATIONS - 1 {
-            let plot_filename = format!("{}/gng_state_iter_{:05}.png", plot_dir, i);
-            if let Err(e) = plot_gng_state(
-                &plot_filename,
-                i,
-                &cluster_pos, // 元のデータ点もプロットする場合
-                &neurons,
-                &neurons_exist,
-                &connectivity,
-            ) {
-                eprintln!("Failed to plot GNG state at iteration {}: {}", i, e); // "イテレーション {} での GNG 状態のプロットに失敗しました: {}"
+        if cfg!(debug_assertions) {
+            if i % 100 == 0 || i == MAX_ITERATIONS - 1 {
+                let plot_filename = format!("{}/gng_state_iter_{:05}.png", plot_dir, i);
+                if let Err(e) = plot_gng_state(
+                    &plot_filename,
+                    i,
+                    &cluster_pos, // 元のデータ点もプロットする場合
+                    &neurons,
+                    &neurons_exist,
+                    &connectivity,
+                ) {
+                    eprintln!("Failed to plot GNG state at iteration {}: {}", i, e); // "イテレーション {} での GNG 状態のプロットに失敗しました: {}"
+                }
+
+                let active_count = neurons_exist.iter().filter(|&&e| e).count();
+                println!("Iteration {}: Active neurons = {}", i, active_count); // "イテレーション {}: アクティブなニューロン = {}"
             }
-
-            let active_count = neurons_exist.iter().filter(|&&e| e).count();
-            println!("Iteration {}: Active neurons = {}", i, active_count); // "イテレーション {}: アクティブなニューロン = {}"
-        }*/
+        }
         // --- プロット処理の終わり ---
-
     } // メインループ終了
 
-    // println!("Simulation finished after {} iterations.", MAX_ITERATIONS); // "シミュレーションは {} イテレーション後に終了しました。"
+    println!("Simulation finished after {} iterations.", MAX_ITERATIONS); // "シミュレーションは {} イテレーション後に終了しました。"
 }
 
 // --- GNG 状態をプロットする関数 ---
@@ -331,7 +289,10 @@ fn plot_gng_state(
     let y_range = (min_y - 10.0)..(max_y + 10.0);
 
     let mut chart = ChartBuilder::on(&root)
-        .caption(format!("GNG State - Iteration {}", iteration), ("sans-serif", 30).into_font())
+        .caption(
+            format!("GNG State - Iteration {}", iteration),
+            ("sans-serif", 30).into_font(),
+        )
         .margin(10)
         .x_label_area_size(30)
         .y_label_area_size(30)
@@ -341,9 +302,10 @@ fn plot_gng_state(
 
     // 1. 元のデータ点をプロット (薄い色で)
     chart.draw_series(
-        data_points.iter().map(|p| Circle::new((p.x, p.y), 2, ShapeStyle::from(&BLACK.mix(0.1)).filled())),
+        data_points
+            .iter()
+            .map(|p| Circle::new((p.x, p.y), 2, ShapeStyle::from(&BLACK.mix(0.1)).filled())),
     )?;
-
 
     // 2. アクティブなニューロンをプロット (赤色)
     let active_neurons: Vec<(f64, f64)> = (0..MAX_N)
@@ -351,23 +313,29 @@ fn plot_gng_state(
         .map(|i| (neurons[i].x, neurons[i].y))
         .collect();
     chart.draw_series(
-        active_neurons.iter().map(|p| Circle::new(*p, 4, ShapeStyle::from(&RED).filled())),
+        active_neurons
+            .iter()
+            .map(|p| Circle::new(*p, 4, ShapeStyle::from(&RED).filled())),
     )?;
 
     // 3. エッジ (接続) をプロット (青線)
     let mut edges = Vec::new();
     for r in 0..MAX_N {
-        if !neurons_exist[r] { continue; }
-        for c in (r + 1)..MAX_N { // 重複を避ける
+        if !neurons_exist[r] {
+            continue;
+        }
+        for c in (r + 1)..MAX_N {
+            // 重複を避ける
             if neurons_exist[c] && connectivity[r][c] {
                 edges.push(((neurons[r].x, neurons[r].y), (neurons[c].x, neurons[c].y)));
             }
         }
     }
     chart.draw_series(
-        edges.into_iter().map(|(p1, p2)| PathElement::new(vec![p1, p2], &BLUE)),
+        edges
+            .into_iter()
+            .map(|(p1, p2)| PathElement::new(vec![p1, p2], &BLUE)),
     )?;
-
 
     root.present()?; // 描画を確定
     Ok(())
@@ -403,18 +371,28 @@ fn find_bounds(
     }
 
     // デフォルト値 (データもニューロンもない場合)
-    if min_x == f64::INFINITY { min_x = 0.0; }
-    if max_x == f64::NEG_INFINITY { max_x = 500.0; } // main の範囲に合わせる
-    if min_y == f64::INFINITY { min_y = 0.0; }
-    if max_y == f64::NEG_INFINITY { max_y = 500.0; }
+    if min_x == f64::INFINITY {
+        min_x = 0.0;
+    }
+    if max_x == f64::NEG_INFINITY {
+        max_x = 500.0;
+    } // main の範囲に合わせる
+    if min_y == f64::INFINITY {
+        min_y = 0.0;
+    }
+    if max_y == f64::NEG_INFINITY {
+        max_y = 500.0;
+    }
 
     (min_x, max_x, min_y, max_y)
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. データを生成
-    let cluster_pos = generate_cluster_data();
+    let img = image::open("sample_image_2.png")?;
+    let cluster_pos = extract_data_from_image(&img)?;
 
     // 2. GNG アルゴリズムを実行
     run_gng(cluster_pos);
+    Ok(())
 }
