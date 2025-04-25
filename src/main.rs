@@ -130,7 +130,7 @@ fn update_error_and_neurons(
     }
 }
 
-// ステップ 5 & 6: エッジの作成/リセットと年齢インクリメント (修正)
+// ステップ 5 & 6: エッジの作成/リセットと年齢インクリメント
 fn update_edges(state: &mut GngState, s1_index: usize, s2_index: usize) {
     // ステップ 5: エッジの年齢をリセットするか、s1 と s2 の間にエッジを作成 (edges を使用)
     // 存在確認と挿入/更新を同時に行う
@@ -330,13 +330,13 @@ fn run_gng(cluster_pos: &Vec<Point2<f64>>) {
                 // ステップ 7: 古いエッジと孤立ノードを削除
                 remove_old_edges_and_nodes(&mut state);
                 // ステップ 8: lambda ステップごとに新しいノードを挿入
-                if i % LAMBDA_VALUE == 0 && state.get_active_neuron_count() < MAX_N { // 修正された関数を使用
+                if i % LAMBDA_VALUE == 0 && state.get_active_neuron_count() < MAX_N {
                     insert_node(&mut state);
                 }
                 // ステップ 9: 全ノードのエラーを減衰
                 decay_errors(&mut state);
-                // ステップ 10: プロット (条件付き) - コメントアウトを解除
-                plot_state(&state, i, &cluster_pos, plot_dir); // plot_state を呼び出すように修正
+                // ステップ 10: プロット (条件付き)
+                plot_state(&state, i, &cluster_pos, plot_dir);
             }
             None => {
                 println!(
@@ -351,7 +351,7 @@ fn run_gng(cluster_pos: &Vec<Point2<f64>>) {
     println!("Simulation finished after {} iterations.", MAX_ITERATIONS);
 }
 
-// main 関数 (変更なし)
+// main 関数
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. データを生成
     let img = image::open("sample_image.png")?;
