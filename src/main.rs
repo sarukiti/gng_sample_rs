@@ -4,10 +4,10 @@ use nalgebra::{Point2, Vector2};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use std::cmp::Ordering;
-use std::collections::HashMap; // HashMap をインポート
+use std::collections::HashMap;
 use std::vec::Vec;
 
-use utils::{extract_data_from_image, plot_gng_state}; // plot_gng_state は別途修正が必要
+use utils::{extract_data_from_image, plot_gng_state};
 
 // --- 定数 ---
 const LR_S1: f64 = 0.5; // 勝者ニューロンの学習率
@@ -19,35 +19,29 @@ const TH_AGE: f64 = 2.0; // エッジの最大年齢
 const LAMBDA_VALUE: usize = 8; // 新規ノード挿入の間隔 (ステップ数)
 const MAX_ITERATIONS: usize = 1000; // 最大イテレーション数を定義
 
-// --- GNG 状態構造体 (変更) ---
 struct GngState {
     neurons: Vec<Point2<f64>>,
     neurons_error: Vec<f64>,
     neurons_exist: Vec<bool>,
-    // connectivity と edge_age を統合
     edges: Vec<HashMap<usize, f64>>, // キー: 隣接ノードインデックス, 値: エッジ年齢
-    active_indices: Vec<usize>, // アクティブなインデックスのリストを追加
+    active_indices: Vec<usize>
 }
 
 impl GngState {
-    // new を修正
     fn new(max_n: usize) -> Self {
         GngState {
             neurons: vec![Point2::origin(); max_n],
             neurons_error: vec![0.0; max_n],
             neurons_exist: vec![false; max_n],
-            // edges を初期化
             edges: vec![HashMap::new(); max_n],
-            active_indices: Vec::new(), // 空で初期化
+            active_indices: Vec::new()
         }
     }
 
-    // 修正: リストへのスライスを返す
     fn get_active_neuron_indices(&self) -> &[usize] {
         &self.active_indices
     }
 
-    // 修正: リストの長さを使う
     fn get_active_neuron_count(&self) -> usize {
         self.active_indices.len()
     }
@@ -59,7 +53,7 @@ impl GngState {
 
 // --- GNG アルゴリズムの各ステップ ---
 
-// ステップ 0: 初期化 (修正)
+// ステップ 0: 初期化
 fn initialize_gng(state: &mut GngState, rng: &mut ThreadRng) {
     state.neurons[0] = Point2::new(rng.gen_range(0.0..500.0), rng.gen_range(0.0..500.0));
     state.neurons[1] = Point2::new(rng.gen_range(0.0..500.0), rng.gen_range(0.0..500.0));
@@ -74,9 +68,9 @@ fn initialize_gng(state: &mut GngState, rng: &mut ThreadRng) {
 
 // ステップ 1: ランダムな入力ベクトル v を取得 (呼び出し側で実行)
 
-// ステップ 2: 勝者 s1 と 2 番目の勝者 s2 を見つける (アロケーション削減版)
+// ステップ 2: 勝者 s1 と 2 番目の勝者 s2 を見つける
 fn find_bmus(state: &GngState, v: &Point2<f64>) -> Option<(usize, usize, f64)> {
-    let active_indices = state.get_active_neuron_indices(); // スライス (&[usize]) を取得
+    let active_indices = state.get_active_neuron_indices();
     if active_indices.len() < 2 {
         return None;
     }
@@ -86,7 +80,7 @@ fn find_bmus(state: &GngState, v: &Point2<f64>) -> Option<(usize, usize, f64)> {
     let mut min_dist_sq = f64::INFINITY;
     let mut second_min_dist_sq = f64::INFINITY;
 
-    for &idx in active_indices { // スライスを直接イテレート
+    for &idx in active_indices {
         let dist_sq = nalgebra::distance_squared(&state.neurons[idx], v);
 
         if dist_sq < min_dist_sq {
@@ -103,16 +97,15 @@ fn find_bmus(state: &GngState, v: &Point2<f64>) -> Option<(usize, usize, f64)> {
         }
     }
 
-    // usize::MAX は初期値なので、有効なインデックスが設定されているか確認
+    // 有効なインデックスが設定されているか確認
     if s1_index != usize::MAX && s2_index != usize::MAX {
         Some((s1_index, s2_index, min_dist_sq))
     } else {
-        // アクティブノードが2つ未満だった場合など
-        None // またはエラー処理
+        None // アクティブノードが2つ未満だった場合など
     }
 }
 
-// ステップ 3 & 4: エラー加算とニューロン更新 (修正)
+// ステップ 3 & 4: エラー加算とニューロン更新
 fn update_error_and_neurons(
     state: &mut GngState,
     s1_index: usize,
@@ -129,9 +122,9 @@ fn update_error_and_neurons(
 
     // s1 の直接の隣接ニューロンを更新 (edges を使用)
     // 隣接ノードのインデックスリストを先に取得（借用チェッカ対策）
-    let neighbor_indices: Vec<usize> = state.edges[s1_index].keys().cloned().collect();
-    for k in neighbor_indices {
-        // state.neurons[k] を変更するため、可変参照が必要
+    let neighbor_indices: Vec<&usize> = state.edges[s1_index].keys().collect();
+    for &k in neighbor_indices {
+        // state.neurons[k] を変更するため、stateは可変参照が必要
         let neighbor_update_vector: Vector2<f64> = (v - state.neurons[k]) * LR_S2;
         state.neurons[k] += neighbor_update_vector;
     }
@@ -159,12 +152,10 @@ fn update_edges(state: &mut GngState, s1_index: usize, s2_index: usize) {
     }
 }
 
-// ステップ 7: 古いエッジと孤立ノードを削除 (修正)
+// ステップ 7: 古いエッジと孤立ノードを削除
 fn remove_old_edges_and_nodes(state: &mut GngState) {
     // --- 古いエッジの削除 ---
     let mut edges_to_remove = Vec::new();
-    // get_active_neuron_indices() は &[] を返すので、コピーが必要な場合がある
-    // ここではイミュータブルな参照でループするので問題ない
     let current_active_indices = state.get_active_neuron_indices();
     for &r in current_active_indices {
         // state.edges[r] をイテレート
@@ -209,7 +200,7 @@ fn remove_old_edges_and_nodes(state: &mut GngState) {
     }
 }
 
-// ステップ 8: 新しいノードを挿入 (修正)
+// ステップ 8: 新しいノードを挿入
 fn insert_node(state: &mut GngState) {
     // (i) 最大エラーを持つノード q を見つける
     let q_index_option = state.get_active_neuron_indices() // スライスを使用
@@ -237,12 +228,12 @@ fn insert_node(state: &mut GngState) {
         }
 
         if let Some(f_index) = f_index_option {
-            // 新しいノード r のインデックスを見つける (変更なし)
+            // 新しいノード r のインデックスを見つける
             if let Some(r_index) = state.find_first_inactive_neuron() {
                 let q_pos = state.neurons[q_index];
                 let f_pos = state.neurons[f_index];
 
-                // 新しいノード r を q と f の中間点に挿入 (変更なし)
+                // 新しいノード r を q と f の中間点に挿入
                 state.neurons_exist[r_index] = true;
                 state.active_indices.push(r_index); // アクティブリストに追加
                 state.neurons[r_index] = nalgebra::center(&q_pos, &f_pos);
@@ -257,11 +248,11 @@ fn insert_node(state: &mut GngState) {
                 state.edges[r_index].insert(f_index, 0.0);
                 state.edges[f_index].insert(r_index, 0.0);
 
-                // (iv) q と f のエラーを係数 alpha で減少させる (変更なし)
+                // (iv) q と f のエラーを係数 alpha で減少させる
                 state.neurons_error[q_index] *= 1.0 - ALPHA;
                 state.neurons_error[f_index] *= 1.0 - ALPHA;
 
-                // (v) r のエラーを設定する (変更なし)
+                // (v) r のエラーを設定する
                 state.neurons_error[r_index] =
                     (state.neurons_error[q_index] + state.neurons_error[f_index]) * 0.5;
             } else {
@@ -271,16 +262,15 @@ fn insert_node(state: &mut GngState) {
     }
 }
 
-// ステップ 9: 全ノードのエラーを減衰 (変更なし)
+// ステップ 9: 全ノードのエラーを減衰
 fn decay_errors(state: &mut GngState) {
-    for k in 0..MAX_N {
-        if state.neurons_exist[k] {
-            state.neurons_error[k] *= 1.0 - BETA;
-        }
+    let active_indices = &state.active_indices;
+    for &k in active_indices {
+        state.neurons_error[k] *= 1.0 - BETA;
     }
 }
 
-// プロット処理 (utils::plot_gng_state の修正が必要だった箇所を修正)
+// プロット処理
 fn plot_state(state: &GngState, iteration: usize, cluster_pos: &Vec<Point2<f64>>, plot_dir: &str) {
     if cfg!(debug_assertions) {
         if iteration % 100 == 0 || iteration == MAX_ITERATIONS - 1 {
@@ -292,20 +282,19 @@ fn plot_state(state: &GngState, iteration: usize, cluster_pos: &Vec<Point2<f64>>
                 cluster_pos,
                 &state.neurons,
                 &state.neurons_exist,
-                &state.edges, // connectivity の代わりに edges を渡す
+                &state.edges
             ) {
                 eprintln!("Failed to plot GNG state at iteration {}: {}", iteration, e);
             }
-            // eprintln! 警告を削除
 
-            let active_count = state.get_active_neuron_count(); // 修正された関数を使用
+            let active_count = state.get_active_neuron_count();
             println!("Iteration {}: Active neurons = {}", iteration, active_count);
         }
     }
 }
 
 // --- GNG アルゴリズム実装 ---
-fn run_gng(cluster_pos: Vec<Point2<f64>>) {
+fn run_gng(cluster_pos: &Vec<Point2<f64>>) {
     if cluster_pos.is_empty() {
         eprintln!("Error: Input data (cluster_pos) is empty.");
         return;
@@ -369,6 +358,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cluster_pos = extract_data_from_image(&img)?;
 
     // 2. GNG アルゴリズムを実行
-    run_gng(cluster_pos);
+    run_gng(&cluster_pos);
     Ok(())
 }
